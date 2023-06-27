@@ -1,4 +1,4 @@
-from typing import Dict, Any, TypeVar, Mapping
+from typing import Callable, Dict, Any, TypeVar, Mapping
 from warnings import warn
 
 import torch
@@ -59,7 +59,23 @@ class LinearLoRA(nn.Module):
         return incompatible_keys
 
 
-def update_model_with_lora(model: nn.Module, rank: int = 5):
+def update_model_with_lora(
+    model: nn.Module, 
+    rank: int = 5, 
+    subtring_to_include: str = '', 
+    prefix: str = '',
+):
+    """
+    
+    Args:
+        model: Model to update with LoRA.
+        rank: Hidden dimension in LoRA.
+        subtring_to_include: Only update modules with this substring 
+            in the name (all modules if empty).
+        prefix: For the correct naming in recursion.
+
+    """
+
     if isinstance(model, LinearLoRA):
         return model
 
@@ -68,9 +84,54 @@ def update_model_with_lora(model: nn.Module, rank: int = 5):
 
     for name, module in model.named_children():
         if isinstance(module, nn.Linear):
-            setattr(model, name, LinearLoRA(module, hidden_dim=rank))
+            if subtring_to_include in (prefix + name):
+                setattr(model, name, LinearLoRA(module, hidden_dim=rank))
         else:
-            updated_module = update_model_with_lora(module, rank=rank)
+            updated_module = update_model_with_lora(
+                module, 
+                rank=rank, 
+                subtring_to_include=subtring_to_include, 
+                prefix=f'{prefix + name}.'
+            )
+            setattr(model, name, updated_module)
+
+    return model
+
+
+def update_model_with_lora_filter_condition(
+    model: nn.Module, 
+    filter_condition: Callable = lambda _: True,
+    rank: int = 5,  
+    prefix: str = '',
+):
+    """
+    
+    Args:
+        model: Model to update with LoRA.
+        filter_condition: Only include modules for 
+            which filter_condition(module_name) is True.
+        rank: Hidden dimension in LoRA.
+        prefix: For the correct naming in recursion.
+
+    """
+
+    if isinstance(model, LinearLoRA):
+        return model
+
+    for param in model.parameters():
+        param.requires_grad = False
+
+    for name, module in model.named_children():
+        if isinstance(module, nn.Linear):
+            if filter_condition(prefix + name):
+                setattr(model, name, LinearLoRA(module, hidden_dim=rank))
+        else:
+            updated_module = update_model_with_lora_filter_condition(
+                module, 
+                filter_condition=filter_condition,
+                rank=rank, 
+                prefix=f'{prefix + name}.'
+            )
             setattr(model, name, updated_module)
 
     return model
