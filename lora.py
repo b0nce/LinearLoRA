@@ -21,6 +21,7 @@ class LinearLoRA(nn.Module):
         self.dec = nn.Linear(
             in_features=hidden_dim, out_features=output_size, bias=False
         )
+        self.dec.weight.data = torch.zeros_like(self.dec.weight.data)
 
         self.linear = linear
         assert (
